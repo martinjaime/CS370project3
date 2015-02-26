@@ -6,24 +6,50 @@
 
 #include <iostream>
 #include <string>
+#include <stdlib.h>
+
+#define MINSLICE 10;
+#define MAXSLICE 300;
 
 using namespace std;
 
 class process
 {
-    private:
+    public:
         int pid,
             start_t,
             end_t,
             priority,
+            nice,
+            cpu_count,
             t_slice,
+            TAT,        // Turn around time
+            TCT,        // Total cpu time: sum of all cpu bursts
+            TIT,        // Total I/O time
+            WT,         // Waiting time: TAT - TCT - TIT(Total IO time)
+            CUT;        // % of CPU utilization time = TCT / TAT (nearest 10th)
+        vector<int> cpu_bursts, 
+            io_bursts;  // io_bursts should be cpu_bursts+1
                         
 
-}
+};
+
+class queue
+
+int calc_priority(int);
 
 int main()
 {
+    vector<process> startup, *active, *expired; // Queues. 
+    process temp;           // temp process object
+    int 
+    string line;
     // read input
+    getline(cin, line);
+    while(line != "***")
+    {
+        
+    }
     // clock = 0
     // while (true) 
     //     If processes are to start at this clock tick
@@ -59,4 +85,9 @@ int main()
 
 
     return 0;
+}
+
+int calc_priority(int nice)
+{
+
 }
