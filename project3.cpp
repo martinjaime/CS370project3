@@ -1,22 +1,27 @@
 /* Martin Jaime
  * CS 370
- * Project 3: CPU Scheduling 
+ * Project 3: a CPU Time Lord
  * 2015-03-03
  */ 
 
 #include <iostream>
 #include <string>
+#include <string.h>  // for strtok
 #include <stdlib.h>
+#include <vector>
+#include <boost/tokenizer.hpp>
 
 #define MINSLICE 10;
 #define MAXSLICE 300;
 
 using namespace std;
+using namespace boost;
 
 class process
 {
     public:
         int pid,
+            arrival_t,
             start_t,
             end_t,
             priority,
@@ -31,25 +36,35 @@ class process
         vector<int> cpu_bursts, 
             io_bursts;  // io_bursts should be cpu_bursts+1
                         
+        process()
+        {
+            pid = 0; arrival_t = 0; start_t = 0; end_t = 0; priority = 0;
+            nice = 0; cpu_count = 0; t_slice = 0; TAT = 0; TCT = 0; TIT = 0;
+            WT = 0; CUT = 0;
+            vector<int>().swap(cpu_bursts);
+            vector<int>().swap(io_bursts); 
+        }
 
 };
 
 class queue
+{
+};
 
-int calc_priority(int);
+void writeStartup(vector<process>);
+int calc_priority(process, process);
+bool complt_arrival(process, process);
+bool complt_tslice(process, process);
 
 int main()
 {
     vector<process> startup, *active, *expired; // Queues. 
-    process temp;           // temp process object
-    int 
-    string line;
-    // read input
-    getline(cin, line);
-    while(line != "***")
-    {
-        
-    }
+
+    writeStartup(startup);
+
+    // Sort processes by arrival.
+    // Define functions for comparing priorities and arrival times to
+    // feed into sort function.
     // clock = 0
     // while (true) 
     //     If processes are to start at this clock tick
@@ -87,7 +102,58 @@ int main()
     return 0;
 }
 
+void writeStartup(vector<process> startup)
+{
+    process temp_p;
+    int temp;
+    int pid_count = 0;
+    string line;
+    tokenizer<>::iterator iter;
+
+    // Read input
+    getline(cin, line);
+    while(line != "***")
+    {
+        cout << "pid_count " << pid_count << endl;
+        temp_p.pid = pid_count;
+        tokenizer<> tok(line);
+        iter = tok.begin();
+        temp_p.nice = atoi((*iter).c_str()); iter++;       // read nice value 
+        temp_p.arrival_t = atoi((*iter).c_str()); iter++;  // read arrival time
+        temp_p.cpu_count = atoi((*iter).c_str()); iter++;  // read # cpu bursts
+        temp = atoi((*iter).c_str()); iter++;
+        temp_p.cpu_bursts.push_back(temp);          // read cpu_burst time
+        while(iter != tok.end()) // read I/O if available
+        {   // First grab io_burst time, and then cpu_burst time
+            temp = atoi((*iter).c_str()); iter++;
+            temp_p.io_bursts.push_back(temp);
+            temp = atoi((*iter).c_str()); iter++;
+            temp_p.cpu_bursts.push_back(temp);
+        }
+        // store processes into startup queue
+        startup.push_back(temp_p);
+        temp_p = process();     // Clear contents of temp_p
+        cout << "cur pid is " << startup[pid_count++].pid << endl;
+        getline(cin, line);
+    }
+
+
+    exit(0);
+
+    return;
+}
+
 int calc_priority(int nice)
 {
 
+}
+
+bool complt_arrival(process a, process b)
+{
+    return a.arrival_t < b.arrival_t; 
+}
+
+bool complt_tslice(process a, process b)
+{
+    return a.t_slice < b.t_slice;
 }
