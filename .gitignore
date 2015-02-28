@@ -2,3 +2,4 @@
 *.pdf
 *.swp
 test*.cpp
+input*.txt

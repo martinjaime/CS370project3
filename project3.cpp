@@ -47,28 +47,41 @@ class process
 
 };
 
-class queue
-{
-};
-
-void writeStartup(vector<process>);
+void writeStartup(vector<process>&);
 int calc_priority(process, process);
 bool complt_arrival(process, process);
-bool complt_tslice(process, process);
+bool complt_priority(process, process);
 
 int main()
 {
-    vector<process> startup, *active, *expired; // Queues. 
+    vector<process> startup, *active, *expired, *tempQ; // Queues. 
+    int clock = 0;
+    active = new vector<process>;
+    expired  = new vector<process>;
 
     writeStartup(startup);
+    // Sort processes by arrival
+    sort(startup.begin(), startup.end(), complt_arrival);
+    /*for(vector<process>::iterator i = startup.begin(); i != startup.end();  ++i)
+        cout << (*i).arrival_t << endl;*/
+    while (true)
+    {
+        for(vector<process>::size_type i = 0; i < startup.size(); i++)
+        {
+            if (startup[i].arrival_t == clock) 
+            {
+                (*active).push_back(startup[i]);
+                startup.erase(startup.begin() + i);
+                i--;
+            }
+            else // otherwise, no other elements should qualify to run. 
+                break;
+        }
+    if (clock > 250) break;
 
-    // Sort processes by arrival.
-    // Define functions for comparing priorities and arrival times to
-    // feed into sort function.
-    // clock = 0
-    // while (true) 
-    //     If processes are to start at this clock tick
-    //         insert processes to the active queue
+    //- while(true)
+    //-     if a process is to start at this clock tick
+    //-         insert processes to the active queue
     //         calculate priority and timeslice.
     //     if the cpu is empty, the lowest priority process in the active queue is
     //         put into the cpu. (If more than two processes have the same priority
@@ -97,27 +110,30 @@ int main()
     //     if the ready queue and the CPU are empty and the expired queue is not, 
     //         then switch the expired and active queues. Simply swap pointers. 
     //     clock++
+        clock++;
+    }
 
 
     return 0;
 }
 
-void writeStartup(vector<process> startup)
+void writeStartup(vector<process> &startup)
 {
     process temp_p;
     int temp;
     int pid_count = 0;
     string line;
-    tokenizer<>::iterator iter;
+    tokenizer<char_separator<char> >::iterator iter;
+    char_separator<char> sep(" ");
 
     // Read input
     getline(cin, line);
     while(line != "***")
     {
-        cout << "pid_count " << pid_count << endl;
         temp_p.pid = pid_count;
-        tokenizer<> tok(line);
+        tokenizer<char_separator<char> > tok(line, sep);   // assign pid
         iter = tok.begin();
+        cout << *iter << endl;
         temp_p.nice = atoi((*iter).c_str()); iter++;       // read nice value 
         temp_p.arrival_t = atoi((*iter).c_str()); iter++;  // read arrival time
         temp_p.cpu_count = atoi((*iter).c_str()); iter++;  // read # cpu bursts
@@ -133,12 +149,10 @@ void writeStartup(vector<process> startup)
         // store processes into startup queue
         startup.push_back(temp_p);
         temp_p = process();     // Clear contents of temp_p
-        cout << "cur pid is " << startup[pid_count++].pid << endl;
         getline(cin, line);
+        // cout << "cur pid is " << startup[pid_count].pid << endl;
+        pid_count++;
     }
-
-
-    exit(0);
 
     return;
 }
@@ -153,7 +167,7 @@ bool complt_arrival(process a, process b)
     return a.arrival_t < b.arrival_t; 
 }
 
-bool complt_tslice(process a, process b)
+bool complt_priority(process a, process b)
 {
-    return a.t_slice < b.t_slice;
+    return a.priority < b.priority;
 }
