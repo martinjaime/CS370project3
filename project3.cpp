@@ -5,8 +5,8 @@
  */ 
 
 #include <iostream>
+#include <cstdio>
 #include <string>
-#include <stdlib.h>
 #include <vector>
 #include <boost/tokenizer.hpp>
 
@@ -33,26 +33,36 @@ class process
         TCT,            // Total cpu time: sum of all cpu bursts
         TIT,            // Total I/O time
         WT,             // Waiting time: TAT - TCT - TIT(Total IO time)
-        CUT;            // % of CPU utilization time = TCT / TAT (nearest 10th)
+        CUT,            // % of CPU utilization time = TCT / TAT (nearest 10th)
+        b_index;
     vector<int> cpu_bursts, 
         io_bursts;  // io_bursts should be cpu_bursts-1
                     
     process()
     {
         pid = 0; arrival_t = 0; start_t = 0; end_t = 0; priority = 0;
-        nice = 0; cpu_count = 0; t_slice = 0; TAT = 0; TCT = 0; TIT = 0;
-        WT = 0; CUT = 0;
+        nice = 0; cpu_count = 0; t_slice = 0; cur_CPUburst = 0; cur_IOburst = 0;
+        TAT = 0; TCT = 0; TIT = 0; WT = 0; CUT = 0, b_index = 0;
         vector<int>().swap(cpu_bursts);
         vector<int>().swap(io_bursts); 
     }
+    
+    bool isExpired();
     void calcPriority();
     void calcTSlice();
     void decTSlice(); 
     void decIOburst();
+    bool isBurstDone();
+    bool isIOBurstDone();
     // add an insert function to insert in appropriate spot. 
 
 };
 
+void printPreempt(vector<process>, int);
+void printEnterCPU(vector<process>, int);
+void expireit(vector<process>&, vector<process>, int);
+void doIO(vector<process>&, vector<process>, int);
+void finishP(vector<process>&, vector<process>&, int);
 void decIO(vector<process>&);
 void qInsert(vector<process>&, process);
 void writeStartup(vector<process>&);
@@ -61,7 +71,8 @@ bool complt_priority(process, process);
 
 int main()
 {
-    vector<process> startup, ioqueue, *active, *expired, *tempQ; // Queues. 
+    vector<process> startup, ioqueue, *active, 
+        *expired, finished, *tempQ;            // Queues. 
     vector<process> cpu;
     int clock = 0;
     active = new vector<process>;
@@ -81,6 +92,7 @@ int main()
             {
                 startup[i].calcPriority();
                 startup[i].calcTSlice();
+                printf("[%5d] <%d> Enters ready queue (Priority: %d, TimeSlice: %d)\n", clock, startup[i].pid, startup[i].priority, startup[i].t_slice);
                 qInsert(*active, startup[i]);
                 startup.erase(startup.begin() + i);
                 i--;
@@ -93,49 +105,63 @@ int main()
         if (cpu.size() == 0 && (*active).size() != 0) // check if cpu is empty
         {
             cpu.push_back((*active)[0]);
+            printEnterCPU(cpu, clock);
             (*active).erase((*active).begin()); 
         }
         // Or check if current process needs to be preempted. 
-        else if ((*active)[0].priority < cpu[0].priority) 
+        else if((*active).size() > 0 && (*active)[0].priority < cpu[0].priority)
         {   
             cpu.push_back((*active)[0]);
+            (*active).erase((*active).begin());
             if (cpu[0].t_slice != 0)
+            {
+                printPreempt(cpu, clock);
                 qInsert(*active, cpu[0]);
+            }
             else
-                qInsert(*expired, cpu[0]);
+                expireit(*expired, cpu, clock);
             cpu.erase(cpu.begin());
+            printEnterCPU(cpu, clock);
         }
-        cpu[0].decTSlice();
-        decIO(ioqueue);
-        
-        if (cpu.size() > 0)
+        //decIO(ioqueue);
+        if (cpu.size() > 0) // if there's something on the cpu
         {
-
+            cpu[0].decTSlice();
+            if (cpu[0].isBurstDone()) // if current burst is exhausted 
+            {
+                if (cpu[0].cpu_bursts.size() == 0)
+                    finishP(finished, cpu, clock);
+                else 
+                    doIO(ioqueue, cpu, clock);
+            }
+            else if (cpu[0].isExpired())
+                expireit((*expired), cpu, clock);
         }
 
-        if (clock > 250) break;
+        if (clock > 10000) break;
 
-    //- while(true)
-    //-     if a process is to start at this clock tick
-    //-         insert processes to the active queue
-    //-         calculate priority and timeslice.
-    //          set current cpu burst time
-    //-     if the cpu is empty, the lowest priority process in the active queue
-    //-         is put into the cpu. (If more than two processes have the same 
-    //-         priority then FIFO algorithm is used. 
-    //-     If the lowest priority process in the active queue has a lower priority
-    //-         than the process in the cpu. If so then preempt. 
-    //-         Preempted process goes back to the active queue if its time slice is
-    //-         not over. 
-    //-     Preform CPU (decrement the timeslice of the process in the CPU)
-    //-     Perform I/O (decrement the I/O burst for all processes in the I/O queue)
-    //     if there is a process p in the CPU 
-    //         if curent CPU burst for p is exhausted
-    //             if p is done with ALL cpu bursts
-    //                 send to the finished queue.
-    //             else p is not done with all CPU bursts (which probably means
-    //                 there is still some I/O burst) send to the I/O queue. 
-    //         if p's timeslice is exhausted send to the expired queue and recalc
+    //-while(true)
+    //-    if a process is to start at this clock tick
+    //-       insert processes to the active queue
+    //-        calculate priority and timeslice.
+    //         set current cpu burst time
+    //-    if the cpu is empty, the lowest priority process in the active queue
+    //-        is put into the cpu. (If more than two processes have the same 
+    //-        priority then FIFO algorithm is used. 
+    //-    If the lowest priority process in the active queue has a lower priority
+    //-        than the process in the cpu. If so then preempt. 
+    //-        Preempted process goes back to the active queue if its time slice is
+    //-        not over. 
+    //
+    //-    Preform CPU (decrement the timeslice of the process in the CPU)
+    //-    Perform I/O (decrement the I/O burst for all processes in the I/O queue)
+    //-    if there is a process p in the CPU 
+    //-        if curent CPU burst for p is exhausted
+    //-            if p is done with ALL cpu bursts
+    //-                send to the finished queue.
+    //-            else p is not done with all CPU bursts (which probably means
+    //-                there is still some I/O burst) send to the I/O queue. 
+    //         else if p's timeslice is exhausted send to the expired queue and recalc
     //             priority and timeslice
     //     if thre is any process in the I/O queue that is finished with its I/O
     //         burst (there may be more than one process p).
@@ -152,6 +178,50 @@ int main()
 
 
     return 0;
+}
+
+void printPreempt(vector<process> cpu, int clock)
+{
+    printf("[%5d] <%d> Preempts process %d \n", clock, cpu[1].pid, cpu[0].pid);
+}
+        
+void printEnterCPU(vector<process> cpu, int clock)
+{
+    printf("[%5d] <%d> Enters the CPU\n", clock, cpu[0].pid);
+}
+
+void activateit(vector<process> &actQ, vector<process> cpu)
+{
+   
+}
+
+void expireit(vector<process> &expQ, vector<process> cpu, int clock)
+{
+    printf("[%5d] <%d> Finished its time slice and moves to the Expired Queue \
+(Priority: %d, Timeslice: %d)\n", clock, cpu[0].pid, cpu[0].priority, cpu[0].t_slice);
+    cpu[0].calcPriority();
+    cpu[0].calcTSlice();
+    qInsert(expQ, cpu[0]);
+    cpu.erase(cpu.begin());
+    return;
+}
+
+void finishP(vector<process> &q, vector<process> &cpu, int clock)
+{
+    printf("[%5d] <%d> Finishes and moves to the Finished Queue\n", clock, 
+            cpu[0].pid);
+    q.push_back(cpu[0]);
+    cpu.pop_back();
+    return;
+}
+
+void doIO(vector<process> &ioQ, vector<process> cpu, int clock)
+{
+    printf("[%5d] <%d> Moves to the IO Queue\n", clock, cpu[0].pid);
+    vector<int>::iterator i = cpu[0].io_bursts.begin();
+    cpu[0].cur_IOburst = *i;
+    cpu[0].io_bursts.erase(i); 
+    return;
 }
 
 void writeStartup(vector<process> &startup)
@@ -189,7 +259,6 @@ void writeStartup(vector<process> &startup)
         // cout << "cur pid is " << startup[pid_count].pid << endl;
         pid_count++;
     }
-
     return;
 }
 
@@ -224,15 +293,8 @@ void decIO(vector<process> &q)
     }
 }
 
-bool complt_arrival(process a, process b)
-{
-    return a.arrival_t < b.arrival_t; 
-}
-
-bool complt_priority(process a, process b)
-{
-    return a.priority < b.priority;
-}
+bool complt_arrival(process a, process b) { return a.arrival_t < b.arrival_t; }
+bool complt_priority(process a, process b) { return a.priority < b.priority; }
 
 /*******************************************************************************
  *                 Member functions for process class                          *
@@ -240,15 +302,14 @@ bool complt_priority(process a, process b)
 
 void process::calcPriority()
 {
-    int bonus;
-    if (TCT == 0 && TIT == 0)
+    int bonus = 0;
+    if (TCT == 0)
         bonus = 0;
-    if (TCT < TIT)
+    else if (TCT < TIT)
         bonus = (int)(((1 - TCT/((double)TIT)) * -5) - 0.5);
     else 
         bonus = (int)(((1 - TIT/((double)TCT)) *  5) + 0.5);
     priority = (int)((nice + 20)/39.0 * 30 + 0.5) + 105 + bonus;
-    return;
 }
 
 void process::calcTSlice()
@@ -257,20 +318,28 @@ void process::calcTSlice()
  */
 {
     t_slice = (int)((1 - priority/140.0) * 290 + 0.5) + 10;
-    cur_CPUburst = cpu_bursts[0];
-    cpu_bursts.erase(cpu_bursts.begin());
-    return;
+    //cur_CPUburst = cpu_bursts[0];
+    //cpu_bursts.erase(cpu_bursts.begin());
 }
 
 void process::decTSlice()
 {
-    t_slice--; 
+    if (cur_CPUburst == 0)
+    {
+        cur_CPUburst = cpu_bursts[cpu_bursts.size()-1];
+        cpu_bursts.erase(cpu_bursts.begin());
+    }
     cur_CPUburst--;
-    return;
+    TCT++;
+    t_slice--; 
 }
 
 void process::decIOburst()
 {
     cur_IOburst--;
-    return;
+    TIT++;
 }
+
+bool process::isBurstDone() { return cur_CPUburst == 0; }
+bool process::isIOBurstDone() { return cur_IOburst == 0; } 
+bool process::isExpired() { return t_slice == 0; }
