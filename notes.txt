@@ -1,0 +1,8 @@
+Need to keep track of currently running cpu and io bursts. 
+So far, I've decided to move next running cpu burst or next io burst
+to a new variable where it will be decremented at the same time as the time
+slice. 
+
+================================================================================
+
+left off deciding on writing fxns for printing output.

@@ -27,6 +27,7 @@ class process
         nice,
         cpu_count,
         t_slice,
+        finish_t,
         cur_CPUburst,   // Currently running CPU burst time
         cur_IOburst,    // Currently running IO burst time
         TAT,            // Turn around time
@@ -67,7 +68,7 @@ void doIO(vector<process>&, process, int);
 void finishP(vector<process>&, vector<process>&, int);
 void decIO(vector<process>&);
 void qInsert(vector<process>&, process);
-void writeStartup(vector<process>&);
+int writeStartup(vector<process>&);
 bool complt_arrival(process, process);
 bool complt_priority(process, process);
 
@@ -77,10 +78,11 @@ int main()
         *expired, finished, *tempQ;            // Queues. 
     vector<process> cpu;
     int clock = 0;
-    active = new vector<process>;
+    int p_count;
+    int avg_TAT = 0, avg_WT = 0, avg_CUT = 0; active = new vector<process>;
     expired  = new vector<process>;
 
-    writeStartup(startup);
+    p_count = writeStartup(startup);
     // Sort processes by arrival
     sort(startup.begin(), startup.end(), complt_arrival);
     /*for(vector<process>::iterator i = startup.begin(); i != startup.end();  ++i)
@@ -128,7 +130,6 @@ int main()
                     finishP(finished, cpu, clock); // Then process is done.
                 else 
                     doIO(ioqueue, cpu[0], clock);     // Otherwise, it has IO.
-                cout << "ioqueue.size() = " << ioqueue.size() << endl;
             }
             else if (cpu[0].isExpired()) 
             {
@@ -141,10 +142,7 @@ int main()
             if (i->isIOBurstDone()) // that is finished with cur IO
             { 
                 if (i->isExpired()) // If expired. 
-                {
                     ioexpireit(*expired, *i, clock);
-                cout << "  DYING888888888888888888888?!?!?" << endl;
-                }
                 else 
                 {
                     qInsert(*active, *i);
@@ -164,10 +162,32 @@ int main()
             expired = tempQ;    // swap pointers.
             printf("[%5d] *** Queue Swap \n", clock);
         }
-        
         clock++;
     }
+    
+    cout << endl << endl;
+    for(vector<process>::iterator i = finished.begin(); i != finished.end(); ++i)
+    {
+        i->TAT = i->finish_t - i->arrival_t;
+        i->CUT = ((float)i->TCT) / ((float)(i->TAT));
+        i->WT = i->TAT - i->TCT - i->TIT;
+        cout << i->TCT << " " <<  i->TAT << endl;
+        printf("Turn around time = %d\n", i->TAT);
+        printf("Total CPU time = %d\n", i->TCT);
+        printf("Waiting Time = %d\n", i->WT);
+        printf("Percentage of CPU utilization time = %.1f\n\n", i->CUT * 100.0);
+    }
 
+    for(vector<process>::iterator i = finished.begin(); i != finished.end(); ++i)
+    {
+        avg_TAT += i->TAT;
+        avg_WT += i->WT;
+        avg_CUT += i->CUT;
+    }
+
+    printf("Average Waiting time: %.3f\n", avg_WT / ((float)p_count));
+    printf("Average Turnaround time: %.3f\n", avg_TAT  / ((float)p_count));
+    printf("Average CPU Utilization: %.3f\n", avg_CUT  / ((float)p_count));
 
     return 0;
 }
@@ -245,10 +265,8 @@ void finishP(vector<process> &q, vector<process> &cpu, int clock)
 {
     printf("[%5d] <%d> Finishes and moves to the Finished Queue\n", clock, 
             cpu[0].pid);
+    cpu[0].finish_t = clock;
     q.push_back(cpu[0]);
-    cout << "       cpu.size() = " << cpu.size() << endl
-         << "       bursts  = " << cpu[0].cpu_bursts.size() << endl
-         << "       IOs = " <<     cpu[0].io_bursts.size() << endl;
     cpu.pop_back();
     return;
 }
@@ -260,15 +278,14 @@ void doIO(vector<process> &ioQ, process p, int clock)
     p.cur_IOburst = *i;
     p.io_bursts.erase(i); 
     ioQ.push_back(p);
-    cout << "ioqueue.size() = " << ioQ.size() << endl;
     return;
 }
 
-void writeStartup(vector<process> &startup)
+int writeStartup(vector<process> &startup)
 {
     process temp_p;
     int temp;
-    int pid_count = 1;
+    int pid_count = 0;
     string line;
     tokenizer<char_separator<char> >::iterator iter;
     char_separator<char> sep(" ");
@@ -277,6 +294,7 @@ void writeStartup(vector<process> &startup)
     getline(cin, line);
     while(line != "***")
     {
+        pid_count++;
         temp_p.pid = pid_count;
         tokenizer<char_separator<char> > tok(line, sep);   // assign pid
         iter = tok.begin();
@@ -297,9 +315,9 @@ void writeStartup(vector<process> &startup)
         temp_p = process();     // Clear contents of temp_p
         getline(cin, line);
         // cout << "cur pid is " << startup[pid_count].pid << endl;
-        pid_count++;
     }
-    return;
+
+    return pid_count; 
 }
 
 void qInsert(vector<process> &q, process newQ)
@@ -353,8 +371,6 @@ void process::calcTSlice()
  */
 {
     t_slice = (int)((1 - priority/140.0) * 290 + 0.5) + 10;
-    //cur_CPUburst = cpu_bursts[0];
-    //cpu_bursts.erase(cpu_bursts.begin());
 }
 
 void process::decTSlice()
@@ -367,12 +383,11 @@ void process::decTSlice()
     cur_CPUburst--;
     TCT++;
     t_slice--; 
-    //cout << "DECREMENTED TIME SLICE \n";
 }
 
 void process::decIOburst()
 {
-    if (cur_IOburst == 0)
+    if (cur_IOburst == 0 && io_bursts.size() != 0)
     {
         cur_IOburst = io_bursts[0];
         io_bursts.erase(io_bursts.begin());
